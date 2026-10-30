@@ -91,6 +91,11 @@ namespace Farik.BlenderBridge
                 bindings.Add(nb);
                 curves.Add(curve);
             }
+            if (bindings.Count == 0 && skipped == 0)
+            {
+                r.errors.Add("The clip Blender wrote has no curves; " + Path.GetFileName(animPath) + " was left unchanged");
+                return;
+            }
             var written = new HashSet<string>(bindings.Select(b => b.path + "|" + Group(b.propertyName)));
 
             // Replace exactly the channels written (rotation in any of Unity's encodings); keep the rest.

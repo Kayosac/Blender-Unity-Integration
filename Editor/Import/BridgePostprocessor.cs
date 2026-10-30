@@ -169,12 +169,6 @@ namespace Farik.BlenderBridge
                 ModelInfo.ApplyRootMotion(c, mc.rootMotion);
                 changed = true;
             }
-            if (item.kind == "anim" && clips.Count == 0 && item.takes.Count > 0)
-            {
-                var t = item.takes[0];
-                clips.Add(new ModelImporterClipAnimation { name = t.originalName, takeName = t.exportedName });
-                changed = true;
-            }
             if (changed) mi.clipAnimations = clips.ToArray();
         }
     }
