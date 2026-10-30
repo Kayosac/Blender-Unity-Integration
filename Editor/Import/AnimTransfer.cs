@@ -40,13 +40,15 @@ namespace Farik.BlenderBridge
             var rigPath = AssetDatabase.GUIDToAssetPath(it.rigGuid);
             var rigMi = AssetImporter.GetAtPath(rigPath) as ModelImporter;
             bool human = rigMi != null && rigMi.animationType == ModelImporterAnimationType.Human;
+            bool reimport = mi != null && ModelInfo.MatchRootCollapse(mi, rigPath, it.armatureName);
             if (mi != null && human)
             {
                 mi.animationType = ModelImporterAnimationType.Human;
                 mi.avatarSetup = ModelImporterAvatarSetup.CopyFromOther;
                 mi.sourceAvatar = ModelInfo.GetAvatar(rigPath);
-                mi.SaveAndReimport();
+                reimport = true;
             }
+            if (reimport) mi.SaveAndReimport();
             var src = ModelInfo.Clips(staging).FirstOrDefault();
             var dst = AssetDatabase.LoadAssetAtPath<AnimationClip>(animPath);
             if (src == null || dst == null)

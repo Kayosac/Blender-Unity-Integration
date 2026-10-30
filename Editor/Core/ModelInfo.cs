@@ -25,6 +25,23 @@ namespace Farik.BlenderBridge
             return go != null && go.GetComponentsInChildren<SkinnedMeshRenderer>(true).Length > 0;
         }
 
+        /// <summary>
+        /// Unity turns a single top-level FBX node into the prefab root. A clip file holds only the
+        /// armature, so its armature node collapses even when the model (which has meshes beside it)
+        /// keeps it, and curve paths stop matching. Sets preserveHierarchy to match the model.
+        /// Returns true when the importer changed and needs a reimport.
+        /// </summary>
+        public static bool MatchRootCollapse(ModelImporter clip, string rigPath, string armatureName)
+        {
+            if (clip == null || string.IsNullOrEmpty(armatureName) || string.IsNullOrEmpty(rigPath)) return false;
+            var rig = AssetDatabase.LoadAssetAtPath<GameObject>(rigPath);
+            if (rig == null) return false;
+            bool keep = rig.transform.Find(armatureName) != null;
+            if (clip.preserveHierarchy == keep) return false;
+            clip.preserveHierarchy = keep;
+            return true;
+        }
+
         public static Avatar GetAvatar(string path) =>
             AssetDatabase.LoadAllAssetsAtPath(path).OfType<Avatar>().FirstOrDefault();
 

@@ -104,7 +104,7 @@ namespace Farik.BlenderBridge
                 mi.bakeAxisConversion = rigMi.bakeAxisConversion;
                 // Unity turns a single top-level node into the prefab root. When the model has other top-level
                 // objects its armature node survives, so the clip file (armature only) must keep it too.
-                mi.preserveHierarchy = item.modelMultiRoot || rigMi.preserveHierarchy;
+                mi.preserveHierarchy = item.modelMultiRoot || rigMi.preserveHierarchy;  // refined after import
                 mi.materialImportMode = ModelImporterMaterialImportMode.None;
                 mi.importCameras = false;
                 mi.importLights = false;

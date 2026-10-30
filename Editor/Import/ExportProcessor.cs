@@ -125,13 +125,15 @@ namespace Farik.BlenderBridge
                 r.warnings.Add("Clip imported, but its model was not found to copy the rig from");
                 return;
             }
+            bool reimport = ModelInfo.MatchRootCollapse(mi, rigPath, it.armatureName);
             if (rigMi.animationType == ModelImporterAnimationType.Human)
             {
                 mi.animationType = ModelImporterAnimationType.Human;
                 mi.avatarSetup = ModelImporterAvatarSetup.CopyFromOther;
                 mi.sourceAvatar = ModelInfo.GetAvatar(rigPath);
-                mi.SaveAndReimport();
+                reimport = true;
             }
+            if (reimport) mi.SaveAndReimport();
             LinksStore.SetClipRig(AssetDatabase.AssetPathToGUID(it.assetPath), it.rigGuid, "");
         }
 
