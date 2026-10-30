@@ -390,6 +390,9 @@ def diff(a, b, take_offset=None):
         ma, mb = a["models"][n], b["models"][n]
         if ma["parent"] != mb["parent"]:
             rep["structure"].append("parent of %s: %s -> %s" % (n, ma["parent"], mb["parent"]))
+        if np.linalg.det(ma["local"][:3, :3]) < 0 <= np.linalg.det(mb["local"][:3, :3]):
+            rep.setdefault("info", []).append("%s: mirrored (negative scale) node, Blender cannot keep the mirror" % n)
+            continue
         r, t = _mat_err(ma["local"], mb["local"], unit)
         bump("node_rot", r)
         bump("node_pos", t)
@@ -460,6 +463,8 @@ def diff(a, b, take_offset=None):
         for n in sorted(nodes):
             if n not in a["models"] or n not in b["models"]:
                 continue
+            if np.linalg.det(a["models"][n]["local"][:3, :3]) < 0:
+                continue  # mirrored node, reported above
             ma = dict(a["models"][n], name=n)
             mb = dict(b["models"][n], name=n)
             times = set()

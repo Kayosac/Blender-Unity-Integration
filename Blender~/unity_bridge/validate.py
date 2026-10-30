@@ -60,6 +60,12 @@ def run(scene, files_to_write=None):
                 issues.append(_issue(ERROR, "NAME_SUFFIX", "Bone '%s' got a duplicate-name suffix" % b.name,
                                      arm_name, b.name))
 
+    mirrored = baseline.get("mirrored") or []
+    if mirrored:
+        issues.append(_issue(WARNING, "MIRRORED_BONES",
+                             "%d mirrored bones (negative scale, e.g. 3ds Max nubs: %s) keep their position "
+                             "but are written unmirrored" % (len(mirrored), _short(mirrored, 3))))
+
     # Objects: prefabs reference child objects by name.
     old_objects = set(baseline.get("objects", {}))
     gone = old_objects - names_now

@@ -547,6 +547,7 @@ def run(scene, mode="SMART", allow_errors=False):
         fresh = importer.capture_baseline(importer.model_collection(scene))
         prev_all = json.loads(st.baseline_json or "{}")
         fresh["clusters"] = prev_all.get("clusters", {})
+        fresh["mirrored"] = prev_all.get("mirrored", [])
         prev = prev_all.get("pose", {})
         for arm_name, bones in fresh["pose"].items():
             old_pose = prev.get(arm_name, {})

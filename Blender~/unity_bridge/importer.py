@@ -242,7 +242,16 @@ def apply_preview_textures(materials):
 # --------------------------------------------------------------------------- takes
 
 
-def _owner_and_take(action_name):
+def _owner_and_take(action_name, take_names=()):
+    """Blender's importer names actions 'Object|Take' or 'Object|Take|Layer' (when the layer has
+    its own name, as in 3ds Max files). Known take names from the file decide where the take is."""
+    for t in sorted(take_names, key=len, reverse=True):
+        marker = "|" + t
+        i = action_name.find(marker)
+        if i > 0:
+            rest = action_name[i + len(marker):]
+            if rest == "" or rest.startswith("|"):
+                return action_name[:i], t
     if "|" in action_name:
         owner, take = action_name.split("|", 1)
         return owner, take
@@ -271,7 +280,7 @@ def transfer_takes(temp_objects, new_actions, target_collection, profile_takes):
     order = [t["name"] for t in profile_takes]
     single_arm = [o for o in target_collection.all_objects if o.type == "ARMATURE"]
     for act in new_actions:
-        owner, take = _owner_and_take(act.name)
+        owner, take = _owner_and_take(act.name, [t["name"] for t in profile_takes])
         entry = takes.setdefault(take, {"take": take, "action": None, "key_action": None, "key_target": ""})
         dst = targets.get(owner)
         if dst is None and owner in key_targets:
@@ -408,7 +417,7 @@ def import_takes_from(path, target_arm, scene, temp_parent):
         results = []
         by_take = {}
         for act in new_act:
-            owner, take = _owner_and_take(act.name)
+            owner, take = _owner_and_take(act.name, [t["name"] for t in prof["takes"]])
             base, _ = util.strip_blender_suffix(owner)
             if owner and base != util.strip_blender_suffix(src.name)[0] and owner != src.name:
                 continue
@@ -471,6 +480,7 @@ def fresh_model(scene, model_abs_path, model_name, materials=None):
             t["start"] = starts.get(t["take"], 0.0)
     apply_preview_textures(materials)
     profile["clusters"] = nodes["clusters"]
+    profile["mirrored"] = sorted(n for n, i in nodes["nodes"].items() if i.get("mirrored") and i["type"] == "LimbNode")
     return col, profile, takes
 
 

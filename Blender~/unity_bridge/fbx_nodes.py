@@ -144,6 +144,7 @@ def read(path):
             "type": e.props[2].decode() if len(e.props) > 2 and isinstance(e.props[2], bytes) else "",
             "parent": names.get(p, "") if p else "",
             "world": get_world(uid),
+            "mirrored": bool(np.linalg.det(local[uid][:3, :3]) < 0),
         }
 
     for uid, e in objs.items():
