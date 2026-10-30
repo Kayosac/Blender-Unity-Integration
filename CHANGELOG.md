@@ -12,4 +12,8 @@ First version for testing on a real project.
 - Clips: new clips as Model@Clip.fbx (bones only), editing clip FBX files, embedded takes and .anim assets.
 - Unity side: clip settings (loop, root motion) for managed clips, take remapping, Humanoid avatar copy,
   material slots resolved by name or template, MeshColliders by suffix, before/after comparison report.
-- Phase 0 test bench for headless Blender.
+- Phase 0 test bench for headless Blender; end-to-end test through Unity on copies of real assets.
+- Exact units (UnitScaleFactor 1 and 100 written exactly), source skin clusters kept, the file's default pose
+  kept apart from takes, bone-attached objects placed where the file has them, clip files keep their own
+  default pose, take names from files with named layers.
+- Export stops on takes that animate objects it cannot write; mirrored end bones are reported.

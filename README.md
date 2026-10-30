@@ -3,7 +3,7 @@
 Открыть любую модель или клип Unity в Blender одной кнопкой и отправить обратно другой. FBX остаётся источником истины: GUID, .meta, ссылки префабов и настройки импорта сохраняются.
 
 - Unity 6000.0+, Blender 5.0+ (рекомендуется 5.2 LTS), macOS / Windows / Linux.
-- Установка: Package Manager → Add package from git URL → `https://github.com/<ты>/blender-bridge.git#v0.1.0`.
+- Установка: Package Manager → Add package from git URL → `https://github.com/Kayosac/Blender-Unity-Integration.git`.
 - Аддон для Blender ставить не нужно — он загружается из пакета.
 
 Полное руководство: [Documentation~/index.md](Documentation~/index.md).
