@@ -17,3 +17,7 @@ First version for testing on a real project.
   kept apart from takes, bone-attached objects placed where the file has them, clip files keep their own
   default pose, take names from files with named layers.
 - Export stops on takes that animate objects it cannot write; mirrored end bones are reported.
+- .anim: samples placed on the scene's frame grid; stepped clips (constant tangents) keep their key times and steps;
+  only the channels Blender writes are replaced.
+- Clip files keep the armature node exactly when the model does, so Generic curve paths match.
+- Unity refreshes on request while in the background (ArtSource/.bridge/refresh.request), for tools and tests.
