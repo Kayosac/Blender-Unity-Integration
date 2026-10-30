@@ -20,8 +20,17 @@ namespace Farik.BlenderBridge
         public static string RequestFile => BridgePaths.Bridge + "/selftest.request";
 
         /// <summary>A request file (one asset path per line, optional) starts the bench without the menu.</summary>
+        public static string E2ERequestFile => BridgePaths.Bridge + "/e2e.request";
+
         public static void CheckRequest()
         {
+            if (!Running && !EndToEnd.Running && File.Exists(E2ERequestFile))
+            {
+                var e2e = File.ReadAllLines(E2ERequestFile).Select(l => l.Trim()).Where(l => l.Length > 0).ToList();
+                File.Delete(E2ERequestFile);
+                EndToEnd.Run(e2e);
+                return;
+            }
             if (Running || !File.Exists(RequestFile)) return;
             var lines = File.ReadAllLines(RequestFile).Select(l => l.Trim()).Where(l => l.Length > 0).ToList();
             File.Delete(RequestFile);
