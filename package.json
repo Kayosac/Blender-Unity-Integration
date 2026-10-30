@@ -1,0 +1,12 @@
+{
+  "name": "com.farik.blender-bridge",
+  "displayName": "Blender Bridge",
+  "version": "0.1.0",
+  "unity": "6000.0",
+  "description": "Open any model or animation clip in Blender with one click and send it back with one button. FBX stays the source of truth: GUIDs, .meta files, prefab references and import settings are kept.",
+  "keywords": ["blender", "fbx", "animation", "pipeline", "round-trip"],
+  "author": { "name": "farik" },
+  "documentationUrl": "",
+  "changelogUrl": "",
+  "dependencies": {}
+}

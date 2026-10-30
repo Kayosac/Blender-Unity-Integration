@@ -1,0 +1,16 @@
+schema_version = "1.0.0"
+
+id = "unity_bridge"
+version = "0.1.0"
+name = "Unity Bridge"
+tagline = "Edit Unity models and clips in Blender, export back with one button"
+maintainer = "farik"
+type = "add-on"
+
+blender_version_min = "5.0.0"
+
+license = ["SPDX:GPL-3.0-or-later"]
+category = "Import-Export"
+
+[permissions]
+files = "Reads and writes models, clips and state files inside the Unity project"

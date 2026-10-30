@@ -1,0 +1,16 @@
+{
+    "name": "Farik.BlenderBridge.Editor",
+    "rootNamespace": "Farik.BlenderBridge",
+    "references": [],
+    "includePlatforms": [
+        "Editor"
+    ],
+    "excludePlatforms": [],
+    "allowUnsafeCode": false,
+    "overrideReferences": false,
+    "precompiledReferences": [],
+    "autoReferenced": true,
+    "defineConstraints": [],
+    "versionDefines": [],
+    "noEngineReferences": false
+}
