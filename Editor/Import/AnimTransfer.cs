@@ -68,6 +68,9 @@ namespace Farik.BlenderBridge
 
             Undo.RegisterCompleteObjectUndo(dst, "Blender Bridge: update clip");
             var before = new HashSet<string>(AnimationUtility.GetCurveBindings(dst).Select(b => b.path + "|" + Group(b.propertyName)));
+            var oldCurves = new Dictionary<string, AnimationCurve>();
+            foreach (var b in AnimationUtility.GetCurveBindings(dst))
+                oldCurves[b.path + "|" + b.propertyName] = AnimationUtility.GetEditorCurve(dst, b);
 
             // What Blender sends: bone curves (Generic) or muscle curves (Humanoid). Blender bakes every
             // bone, so a channel the clip never animated is written only if it now moves or differs from
@@ -89,7 +92,7 @@ namespace Farik.BlenderBridge
                     continue;
                 }
                 bindings.Add(nb);
-                curves.Add(curve);
+                curves.Add(KeepKeyTiming(curve, oldCurves.TryGetValue(nb.path + "|" + nb.propertyName, out var old) ? old : null));
             }
             if (bindings.Count == 0 && skipped == 0)
             {
@@ -117,6 +120,33 @@ namespace Farik.BlenderBridge
 
             AssetDatabase.DeleteAsset(staging);
             DeleteEmptyFolders(Path.GetDirectoryName(staging)?.Replace('\\', '/'));
+        }
+
+        /// <summary>
+        /// A stepped original (constant tangents, e.g. 12 fps "on twos" animation) keeps its key times and
+        /// steps: the new curve is read at the old key times. Smooth curves are taken as Blender baked them.
+        /// </summary>
+        static AnimationCurve KeepKeyTiming(AnimationCurve baked, AnimationCurve old)
+        {
+            if (old == null || old.length < 2) return baked;
+            for (int i = 0; i < old.length - 1; i++)
+                if (AnimationUtility.GetKeyRightTangentMode(old, i) != AnimationUtility.TangentMode.Constant &&
+                    !float.IsInfinity(old.keys[i].outTangent))
+                    return baked;
+            var keys = new Keyframe[old.length];
+            for (int i = 0; i < old.length; i++)
+            {
+                // Read just after the key: Blender holds the value from the key onwards too.
+                float t = old.keys[i].time;
+                keys[i] = new Keyframe(t, baked.Evaluate(t + 1e-4f), float.PositiveInfinity, float.PositiveInfinity);
+            }
+            var c = new AnimationCurve(keys);
+            for (int i = 0; i < c.length; i++)
+            {
+                AnimationUtility.SetKeyLeftTangentMode(c, i, AnimationUtility.TangentMode.Constant);
+                AnimationUtility.SetKeyRightTangentMode(c, i, AnimationUtility.TangentMode.Constant);
+            }
+            return c;
         }
 
         static string Group(string property)

@@ -573,13 +573,22 @@ def load_anim_samples(arm_obj, sample_path, clip_name):
     if not sample:
         raise RuntimeError("Unity samples are missing: %s" % sample_path)
     poses, resid = baking.unity_samples_to_pose(arm_obj, sample)
-    frames = list(range(len(poses)))
+    # Unity sampled at the clip's own rate; place the samples on the scene's frame grid.
+    scene = bpy.context.scene
+    scene_fps = scene.render.fps / (scene.render.fps_base or 1.0)
+    clip_fps = float(sample.get("fps") or scene_fps)
+    step = scene_fps / clip_fps
+    frames = [i * step for i in range(len(poses))]
     act = bpy.data.actions.new(clip_name)
     act.use_fake_user = True
     baking.bake_pose_matrices(arm_obj, act, frames, poses)
+    if sample.get("stepped"):
+        for fc in actions.iter_fcurves(act):
+            for kp in fc.keyframe_points:
+                kp.interpolation = "CONSTANT"
     act.use_frame_range = True
     act.frame_start = 0
-    act.frame_end = max(0, len(frames) - 1)
+    act.frame_end = max(0.0, frames[-1] if frames else 0.0)
     return act, resid
 
 

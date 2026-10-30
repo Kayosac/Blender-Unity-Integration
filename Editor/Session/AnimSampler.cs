@@ -115,7 +115,7 @@ namespace Farik.BlenderBridge
                 {
                     if (useAnimMode) AnimationMode.StopAnimationMode();
                 }
-                Write(outAbs, paths, rest, frames, fps, data);
+                Write(outAbs, paths, rest, frames, fps, data, IsStepped(clip));
             }
             finally
             {
@@ -123,10 +123,30 @@ namespace Farik.BlenderBridge
             }
         }
 
-        static void Write(string path, List<string> bones, List<Matrix4x4> rest, int frames, float fps, List<Matrix4x4> data)
+        /// <summary>True when the clip's curves hold their values between keys (constant tangents).</summary>
+        public static bool IsStepped(AnimationClip clip)
+        {
+            int keys = 0, constant = 0;
+            foreach (var b in AnimationUtility.GetCurveBindings(clip))
+            {
+                var c = AnimationUtility.GetEditorCurve(clip, b);
+                if (c == null || c.length < 2) continue;
+                for (int i = 0; i < c.length - 1; i++)
+                {
+                    keys++;
+                    if (AnimationUtility.GetKeyRightTangentMode(c, i) == AnimationUtility.TangentMode.Constant ||
+                        float.IsInfinity(c.keys[i].outTangent)) constant++;
+                }
+            }
+            return keys > 0 && constant == keys;
+        }
+
+        static void Write(string path, List<string> bones, List<Matrix4x4> rest, int frames, float fps, List<Matrix4x4> data,
+            bool stepped)
         {
             var sb = new StringBuilder(64 * 1024);
             sb.Append("{\"fps\":").Append(fps.ToString(CultureInfo.InvariantCulture));
+            sb.Append(",\"stepped\":").Append(stepped ? "true" : "false");
             sb.Append(",\"frames\":").Append(frames);
             sb.Append(",\"bones\":[");
             for (int i = 0; i < bones.Count; i++)
