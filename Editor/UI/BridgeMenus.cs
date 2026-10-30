@@ -53,6 +53,23 @@ namespace Farik.BlenderBridge
         [MenuItem(Root + "Run Self-Test", false, 1140)]
         static void RunSelfTest() => SelfTest.Run();
 
+        /// <summary>Round trips through Unity and background Blender on copies of the selected assets.
+        /// Select models and, optionally, .anim clips together with the model they play on.</summary>
+        [MenuItem(Root + "Run End-to-End Test", false, 1141)]
+        static void RunEndToEnd()
+        {
+            var paths = Selection.objects.Select(AssetDatabase.GetAssetPath).Where(p => !string.IsNullOrEmpty(p)).Distinct().ToList();
+            var models = paths.Where(ModelInfo.IsFbx).ToList();
+            var rig = models.FirstOrDefault(ModelInfo.HasSkin);
+            var lines = models.Concat(paths.Where(ModelInfo.IsAnim).Where(_ => rig != null).Select(a => a + "|" + rig)).ToList();
+            if (lines.Count == 0)
+            {
+                EditorUtility.DisplayDialog("Blender Bridge", "Select models (and .anim clips with their model) in the Project window.", "OK");
+                return;
+            }
+            EndToEnd.Run(lines);
+        }
+
         [MenuItem("Window/Blender Bridge", false, 2000)]
         static void Window() => BridgeWindow.Open(BridgeWindow.Tab.Sessions, null);
 

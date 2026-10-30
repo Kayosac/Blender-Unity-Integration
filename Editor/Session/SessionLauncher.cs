@@ -10,6 +10,12 @@ namespace Farik.BlenderBridge
     /// <summary>Builds the session manifest for Blender and starts it.</summary>
     internal static class SessionLauncher
     {
+        /// <summary>Self-test hook: receives (exe, blend or null, manifest) instead of opening a window.</summary>
+        internal static Action<string, string, string> LaunchOverride;
+
+        /// <summary>Self-test entry: skips the pickers by taking a fully resolved target.</summary>
+        internal static void OpenResolved(BridgeTarget t) => Launch(t);
+
         public static void OpenTargets(List<BridgeTarget> targets, string unsupported = null)
         {
             if (targets == null || targets.Count == 0)
@@ -182,6 +188,11 @@ namespace Farik.BlenderBridge
                 });
             }
             EditorUtility.DisplayProgressBar("Blender Bridge", "Starting Blender", 0.9f);
+            if (LaunchOverride != null)
+            {
+                LaunchOverride(exe, fresh ? null : blendAbs, manifestAbs);
+                return;
+            }
             if (BlenderLocator.Launch(exe, fresh ? null : blendAbs, manifestAbs))
                 BridgeIO.Log($"Opening {t.Label} in Blender {version} ({(fresh ? "fresh import" : blendRel)})");
         }

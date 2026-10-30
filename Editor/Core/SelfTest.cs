@@ -25,6 +25,11 @@ namespace Farik.BlenderBridge
             if (Running || !File.Exists(RequestFile)) return;
             var lines = File.ReadAllLines(RequestFile).Select(l => l.Trim()).Where(l => l.Length > 0).ToList();
             File.Delete(RequestFile);
+            if (lines.Count > 0 && lines[0] == "e2e")
+            {
+                if (!EndToEnd.Running) EndToEnd.Run(lines.Skip(1));
+                return;
+            }
             Run(3, lines.Where(ModelInfo.IsFbx).ToList());
         }
 
