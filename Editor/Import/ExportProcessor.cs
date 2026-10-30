@@ -36,6 +36,14 @@ namespace Farik.BlenderBridge
             if (EditorApplication.timeSinceStartup < _next) return;
             _next = EditorApplication.timeSinceStartup + 1.5;
             SelfTest.CheckRequest();
+            var refresh = BridgePaths.Bridge + "/refresh.request";
+            if (File.Exists(refresh))
+            {
+                // Lets tools refresh Unity while it is in the background (Unity refreshes on focus only).
+                File.Delete(refresh);
+                AssetDatabase.Refresh();
+                return;
+            }
             string[] files;
             try
             {
