@@ -187,6 +187,16 @@ namespace Farik.BlenderBridge
                 Refresh();
             }
             if (GUILayout.Button("Process pending exports now")) ExportProcessor.ProcessNow();
+            EditorGUILayout.Space();
+            EditorGUILayout.LabelField("Self-test", EditorStyles.boldLabel);
+            EditorGUILayout.HelpBox("Runs FBX → Blender → FBX cycles on a synthetic set plus any FBX selected in the Project " +
+                                    "window, and compares the files the way Unity reads them.", MessageType.None);
+            using (new EditorGUI.DisabledScope(SelfTest.Running))
+            {
+                if (GUILayout.Button(SelfTest.Running ? "Self-test running…" : "Run self-test")) SelfTest.Run();
+            }
+            if (System.IO.File.Exists(SelfTest.ReportText))
+                EditorGUILayout.HelpBox(System.IO.File.ReadAllText(SelfTest.ReportText), MessageType.None);
             if (GUILayout.Button("Open settings")) SettingsService.OpenProjectSettings(BridgeSettingsProvider.ProjectPath);
         }
 

@@ -50,6 +50,9 @@ namespace Farik.BlenderBridge
         [MenuItem(Root + "Show History", false, 1122)]
         static void History() => BridgeWindow.Open(BridgeWindow.Tab.History, SelectedModelPath());
 
+        [MenuItem(Root + "Run Self-Test", false, 1140)]
+        static void RunSelfTest() => SelfTest.Run();
+
         [MenuItem("Window/Blender Bridge", false, 2000)]
         static void Window() => BridgeWindow.Open(BridgeWindow.Tab.Sessions, null);
 
