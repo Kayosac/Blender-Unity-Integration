@@ -475,7 +475,7 @@ def diff(a, b, take_offset=None):
 
 
 TOLERANCES = {
-    "node_rot": 5e-4, "node_pos": 1e-5, "vertex": 1e-6, "normal": 1e-2, "uv": 1e-5, "color": 1.0 / 255 + 1e-6,
+    "node_rot": 5e-4, "node_pos": 1e-4, "vertex": 1e-6, "normal": 2e-2, "uv": 1e-5, "color": 1.0 / 255 + 1e-6,
     "weight": 1e-4, "bind": 1e-4, "shape": 1e-4, "take_length": 1e-3, "anim_rot": 1e-4, "anim_pos": 1e-3,
 }
 

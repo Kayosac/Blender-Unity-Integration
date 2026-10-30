@@ -279,7 +279,11 @@ def main():
         bones = {n for n, i in fbx_nodes.read(path)["nodes"].items() if i["type"] == "LimbNode"}  # its skeleton
         rig = next((k for k, b in rig_bones.items() if bones and bones <= b), None)
         if rig is None:
-            REPORT["files"][name] = {"skipped": "clip file: no selected model has all its bones"}
+            # No model with this skeleton: the clip is edited on its own skeleton, like in Unity.
+            try:
+                REPORT["files"][name] = cycle_file(name, path)
+            except Exception as e:  # noqa: BLE001
+                REPORT["files"][name] = {"error": repr(e), "trace": traceback.format_exc()}
             continue
         try:
             REPORT["files"][name] = {"clip_on": rig, "result": check_clip_roundtrip(rigs[rig], path)}

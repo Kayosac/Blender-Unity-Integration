@@ -129,6 +129,19 @@ def export_pose(scene, collection, baseline):
                     pass
 
 
+_TRANSFORM_PROPS = ("rotation_mode", "location", "rotation_euler", "rotation_quaternion", "rotation_axis_angle",
+                    "scale", "delta_location", "delta_rotation_euler", "delta_rotation_quaternion", "delta_scale")
+
+
+def _transform_props(o):
+    """Raw transform channels. Restoring these is exact; matrix_basis would re-decompose with float noise."""
+    out = {}
+    for k in _TRANSFORM_PROPS:
+        v = getattr(o, k)
+        out[k] = v if isinstance(v, str) else tuple(v)
+    return out
+
+
 @contextmanager
 def _export_pose(scene, collection, baseline):
     """Default pose from the source file, no active actions; everything restored afterwards."""
@@ -142,15 +155,16 @@ def _export_pose(scene, collection, baseline):
             saved.append((keys, keys.animation_data.action, actions.slot_of(keys)))
     for id_data, _a, _s in saved:
         id_data.animation_data.action = None
-    transforms = [(o, o.matrix_basis.copy()) for o in collection.all_objects]
+    transforms = [(o, _transform_props(o)) for o in collection.all_objects]
     pose = importer.restore_static_pose(collection, baseline)
     try:
         yield
     finally:
         importer.restore_pose_values(collection, pose)
-        for o, m in transforms:
+        for o, props in transforms:
             try:
-                o.matrix_basis = m
+                for k, v in props.items():
+                    setattr(o, k, v)
             except ReferenceError:
                 pass
         for id_data, act, slot in saved:

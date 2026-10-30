@@ -176,6 +176,12 @@ def capture_baseline(collection):
     return {"objects": objects, "bones": bones, "materials": materials, "pose": pose}
 
 
+def _pose_channels(pb):
+    """Raw channels restore exactly; matrix_basis would re-decompose with float noise."""
+    return {k: (getattr(pb, k) if k == "rotation_mode" else tuple(getattr(pb, k)))
+            for k in ("rotation_mode", "location", "rotation_quaternion", "rotation_euler", "rotation_axis_angle", "scale")}
+
+
 def restore_static_pose(collection, baseline):
     """Puts every armature back into the default pose read from the FBX (node defaults)."""
     saved = {}
@@ -183,7 +189,7 @@ def restore_static_pose(collection, baseline):
         bpose = baseline.get("pose", {}).get(a.name)
         if not bpose:
             continue
-        saved[a.name] = {pb.name: pb.matrix_basis.copy() for pb in a.pose.bones}
+        saved[a.name] = {pb.name: _pose_channels(pb) for pb in a.pose.bones}
         for pb in a.pose.bones:
             vals = bpose.get(pb.name)
             pb.matrix_basis = Matrix((vals[0:4], vals[4:8], vals[8:12], vals[12:16])) if vals else Matrix.Identity(4)
@@ -196,9 +202,10 @@ def restore_pose_values(collection, saved):
         if not values:
             continue
         for pb in a.pose.bones:
-            m = values.get(pb.name)
-            if m is not None:
-                pb.matrix_basis = m
+            ch = values.get(pb.name)
+            if ch is not None:
+                for k, v in ch.items():
+                    setattr(pb, k, v)
 
 
 # --------------------------------------------------------------------------- viewport textures

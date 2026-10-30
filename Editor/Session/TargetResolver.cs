@@ -175,7 +175,7 @@ namespace Farik.BlenderBridge
             if (link != null)
             {
                 var p = AssetDatabase.GUIDToAssetPath(link.rig);
-                if (!string.IsNullOrEmpty(p) && ModelInfo.HasMesh(p))
+                if (!string.IsNullOrEmpty(p) && (ModelInfo.HasMesh(p) || p == t.assetPath))
                 {
                     t.rigPath = p;
                     if (string.IsNullOrEmpty(t.pathPrefix)) t.pathPrefix = link.prefix;
@@ -206,6 +206,17 @@ namespace Farik.BlenderBridge
                 return;
             }
             var all = candidates.Count > 0 ? candidates : AllSkinnedModels();
+            if (t.kind == TargetKind.ClipFbx)
+            {
+                // A clip FBX carries its own skeleton, so it can always be edited on that.
+                if (all.Count == 0)
+                {
+                    t.rigPath = t.assetPath;
+                    done(t);
+                    return;
+                }
+                all.Insert(0, t.assetPath);
+            }
             if (all.Count == 0)
             {
                 EditorUtility.DisplayDialog("Blender Bridge",
@@ -213,7 +224,8 @@ namespace Farik.BlenderBridge
                     "OK");
                 return;
             }
-            PickerWindow.Show("Which model does this clip play on?", all.Select(p => p).ToList(), all,
+            var labels = all.Select(p => p == t.assetPath ? "Its own skeleton (" + System.IO.Path.GetFileName(p) + ")" : p).ToList();
+            PickerWindow.Show("Which model does this clip play on?", labels, all,
                 p =>
                 {
                     t.rigPath = p;

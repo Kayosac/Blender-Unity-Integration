@@ -151,11 +151,13 @@ namespace Farik.BlenderBridge
                 m.materials = ModelInfo.MaterialPreviews(mi);
                 m.files.Add(new FileEntry
                 {
-                    guid = modelGuid, assetPath = rigPath, kind = "MODEL", hasMesh = true, sha256 = modelSha,
+                    guid = modelGuid, assetPath = rigPath, kind = "MODEL", hasMesh = ModelInfo.HasMesh(rigPath), sha256 = modelSha,
                     thirdParty = m.model.thirdParty, takes = ModelInfo.Takes(mi),
                 });
                 var clipFiles = ModelInfo.RelatedClipFiles(rigPath);
-                if (t.kind == TargetKind.ClipFbx && !clipFiles.Contains(t.assetPath)) clipFiles.Add(t.assetPath);
+                clipFiles.Remove(rigPath);
+                if (t.kind == TargetKind.ClipFbx && t.assetPath != rigPath && !clipFiles.Contains(t.assetPath))
+                    clipFiles.Add(t.assetPath);
                 foreach (var cf in clipFiles) m.files.Add(ClipEntry(cf, modelGuid, settings));
                 if (t.kind == TargetKind.Anim)
                 {
@@ -163,7 +165,7 @@ namespace Farik.BlenderBridge
                     m.files.Add(AnimEntry(t, modelGuid, m.sessionId, settings));
                 }
                 ModelSnapshot.Save(rigPath);
-                if (t.kind == TargetKind.ClipFbx) ModelSnapshot.Save(t.assetPath);
+                if (t.kind == TargetKind.ClipFbx && t.assetPath != rigPath) ModelSnapshot.Save(t.assetPath);
             }
 
             m.focus = Focus(t);
