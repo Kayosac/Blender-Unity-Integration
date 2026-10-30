@@ -24,6 +24,12 @@ sys.path.insert(0, HERE)
 
 import bpy  # noqa: E402
 
+# Developer hook: a diag.py next to this file runs instead of the bench (same arguments).
+_DIAG = os.path.join(HERE, "diag.py")
+if os.path.exists(_DIAG):
+    exec(compile(open(_DIAG).read(), _DIAG, "exec"), {"__name__": "diag", "__file__": _DIAG})
+    sys.exit(0)
+
 import unity_bridge  # noqa: E402
 
 unity_bridge.register()
@@ -84,7 +90,7 @@ def _place(src, rel):
 def _summ(rep):
     ok, bad = fbxsem.verdict(rep)
     return {"ok": ok, "over_tolerance": bad, "structure": rep["structure"][:20],
-            "max": {k: float("%.3g" % v) for k, v in rep["max"].items()}}
+            "max": {k: float("%.3g" % v) for k, v in rep["max"].items()}, "info": rep.get("info", [])}
 
 
 # --------------------------------------------------------------------------- cycles
@@ -251,6 +257,7 @@ def main():
     corpus_dir = os.path.join(OUT, "corpus")
     synth = corpus.build_all(corpus_dir)
     sources = {k: v for k, v in synth.items() if not k.startswith("clip_")}
+    user_clips = {}
     if FBX_DIR and os.path.isdir(FBX_DIR):
         for root, _dirs, files in os.walk(FBX_DIR):
             for fn in files:
@@ -259,10 +266,23 @@ def main():
                     if fbx_profile.read(p).get("has_mesh"):
                         sources["user/" + fn] = p
                     else:
-                        REPORT["files"]["user/" + fn] = {"skipped": "no mesh: clip files need a rig"}
+                        user_clips["user/" + fn] = p
     for name, path in sources.items():
         try:
             REPORT["files"][name] = cycle_file(name, path)
+        except Exception as e:  # noqa: BLE001
+            REPORT["files"][name] = {"error": repr(e), "trace": traceback.format_exc()}
+    from unity_bridge import fbx_nodes
+    rigs = {k: v for k, v in sources.items() if k.startswith("user/")}
+    rig_bones = {k: set(fbx_nodes.read(v)["nodes"]) for k, v in rigs.items()}
+    for name, path in user_clips.items():
+        bones = {n for n, i in fbx_nodes.read(path)["nodes"].items() if i["type"] == "LimbNode"}  # its skeleton
+        rig = next((k for k, b in rig_bones.items() if bones and bones <= b), None)
+        if rig is None:
+            REPORT["files"][name] = {"skipped": "clip file: no selected model has all its bones"}
+            continue
+        try:
+            REPORT["files"][name] = {"clip_on": rig, "result": check_clip_roundtrip(rigs[rig], path)}
         except Exception as e:  # noqa: BLE001
             REPORT["files"][name] = {"error": repr(e), "trace": traceback.format_exc()}
     checks = {
@@ -287,6 +307,15 @@ def main():
         if "skipped" in r:
             lines.append("SKIP  %s: %s" % (name, r["skipped"]))
             continue
+        if "clip_on" in r:
+            d = r["result"]["diff"]
+            ok = d["ok"] and r["result"]["fingerprint_stable"]
+            lines.append("%s  %s  (clip on %s) fp_stable=%s" % ("PASS" if ok else "FAIL", name, r["clip_on"],
+                                                               r["result"]["fingerprint_stable"]))
+            if not d["ok"]:
+                lines.append("      over: %s  structure: %s" % (d["over_tolerance"], d["structure"][:5]))
+                lines.append("      max: %s" % d["max"])
+            continue
         first = r["cycles"][0]["vs_original"]
         drift = all(c["vs_previous"]["ok"] for c in r["cycles"][1:])
         ok = first["ok"] and drift and all(r["fingerprint_stable"]) and all(r["noop_after_export"])
@@ -296,6 +325,11 @@ def main():
         if not first["ok"]:
             lines.append("      over: %s  structure: %s" % (first["over_tolerance"], first["structure"][:5]))
             lines.append("      max: %s" % first["max"])
+        for info in first.get("info", []):
+            lines.append("      note: %s" % info)
+        if not drift:
+            worst = next(c["vs_previous"] for c in r["cycles"][1:] if not c["vs_previous"]["ok"])
+            lines.append("      drift: %s %s" % (worst["over_tolerance"], worst["structure"][:3]))
     lines.append("")
     for name, r in REPORT["checks"].items():
         lines.append("CHECK %s: %s" % (name, json.dumps(r, default=str)[:600]))

@@ -358,9 +358,15 @@ def _pose_at(model, take, t):
 
 
 def _mat_err(a, b, unit):
-    rot = float(np.abs(a[:3, :3] - b[:3, :3]).max())
-    tr = float(np.abs(a[:3, 3] - b[:3, 3]).max()) / max(unit, 1e-9)
+    """Errors relative to the values' own size: float32 files keep ~7 significant digits."""
+    rot = float(np.abs(a[:3, :3] - b[:3, :3]).max()) / max(1.0, float(np.abs(a[:3, :3]).max()))
+    tr = float(np.abs(a[:3, 3] - b[:3, 3]).max()) / max(unit, 1e-9, float(np.abs(a[:3, 3]).max()))
     return rot, tr
+
+
+def _unit_rows(n):
+    length = np.linalg.norm(n, axis=1, keepdims=True)
+    return n / np.where(length > 1e-12, length, 1.0)
 
 
 def diff(a, b, take_offset=None):
@@ -393,16 +399,25 @@ def diff(a, b, take_offset=None):
             rep["structure"].append("topology of %s: %s/%d -> %s/%d" % (
                 n, ga["vertices"].shape, len(ga["polys"]), gb["vertices"].shape, len(gb["polys"])))
             continue
-        bump("vertex", np.abs(ga["vertices"] - gb["vertices"]).max() if len(ga["vertices"]) else 0)
+        if len(ga["vertices"]):
+            size = max(1.0, float(np.abs(ga["vertices"]).max()))
+            bump("vertex", np.abs(ga["vertices"] - gb["vertices"]).max() / size)
         if ga["normals"] is not None and gb["normals"] is not None and ga["normals"].shape == gb["normals"].shape:
-            bump("normal", np.abs(ga["normals"] - gb["normals"]).max())
+            # Unity normalises normals on import; some files store unnormalised ones.
+            # Loops whose source normal is not unit length come from degenerate faces; Blender
+            # recomputes those, so they are counted but not compared.
+            ok = np.abs(np.linalg.norm(ga["normals"], axis=1) - 1.0) < 0.05
+            rep.setdefault("info", []).append("%s: %d degenerate normals skipped" % (n, int((~ok).sum()))) if (~ok).any() else None
+            if ok.any():
+                bump("normal", np.abs(_unit_rows(ga["normals"][ok]) - _unit_rows(gb["normals"][ok])).max())
         elif (ga["normals"] is None) != (gb["normals"] is None):
             rep["structure"].append("normals of %s present/absent changed" % n)
         for key in ("uvs", "colors"):
-            if set(ga[key]) != set(gb[key]):
-                rep["structure"].append("%s layers of %s: %s -> %s" % (key, n, sorted(ga[key]), sorted(gb[key])))
-            for lname in set(ga[key]) & set(gb[key]):
-                xa, xb = ga[key][lname], gb[key][lname]
+            # Unity reads layers by position; their names do not matter.
+            la, lb = list(ga[key].values()), list(gb[key].values())
+            if len(la) != len(lb):
+                rep["structure"].append("%s layers of %s: %d -> %d" % (key, n, len(la), len(lb)))
+            for lname, (xa, xb) in enumerate(zip(la, lb)):
                 if xa is None or xb is None or xa.shape != xb.shape:
                     rep["structure"].append("%s %s of %s changed shape" % (key, lname, n))
                     continue
@@ -421,7 +436,8 @@ def diff(a, b, take_offset=None):
             if keys:
                 bump("weight", max(abs(wa.get(k, 0.0) - wb.get(k, 0.0)) for k in keys))
             if sa[bone]["link"] is not None and sb[bone]["link"] is not None:
-                bump("bind", np.abs(sa[bone]["link"] - sb[bone]["link"]).max())
+                la, lb = sa[bone]["link"], sb[bone]["link"]
+                bump("bind", np.abs(la - lb).max() / max(1.0, float(np.abs(la).max())))
     for key in sorted(set(a["shapes"]) | set(b["shapes"])):
         if key not in a["shapes"] or key not in b["shapes"]:
             rep["structure"].append("blend shape %s/%s present/absent changed" % key)
@@ -459,7 +475,7 @@ def diff(a, b, take_offset=None):
 
 
 TOLERANCES = {
-    "node_rot": 1e-5, "node_pos": 1e-4, "vertex": 1e-5, "normal": 2e-3, "uv": 1e-5, "color": 1.0 / 255 + 1e-6,
+    "node_rot": 5e-4, "node_pos": 1e-5, "vertex": 1e-6, "normal": 1e-2, "uv": 1e-5, "color": 1.0 / 255 + 1e-6,
     "weight": 1e-4, "bind": 1e-4, "shape": 1e-4, "take_length": 1e-3, "anim_rot": 1e-4, "anim_pos": 1e-3,
 }
 

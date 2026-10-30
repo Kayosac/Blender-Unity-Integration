@@ -19,7 +19,7 @@ if "props" in locals():
                validate, history, exporter, clips, session, ui):  # noqa: F821
         importlib.reload(_m)
 
-from . import (actions, baking, clips, exporter, fbx_profile, fingerprint, history, importer,  # noqa: E402
+from . import (actions, baking, clips, exporter, fbx_nodes, fbx_patch, fbx_profile, fingerprint, history, importer,  # noqa: E402
                paths, props, session, ui, util, validate)
 
 _registered = False

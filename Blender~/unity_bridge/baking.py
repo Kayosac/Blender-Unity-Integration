@@ -31,6 +31,26 @@ def _uniform_scale(m):
     return (abs(s.x) + abs(s.y) + abs(s.z)) / 3.0 or 1.0
 
 
+def pose_basis(arm_obj, poses):
+    """Armature-space pose matrices (bone name -> Matrix) to matrix_basis per bone, as flat lists."""
+    arm = arm_obj.data
+    P, out = {}, {}
+    for b in bones_parent_first(arm):
+        parent = b.parent
+        M = poses.get(b.name)
+        if M is None:
+            M = b.matrix_local.copy() if parent is None else \
+                P[parent.name] @ (parent.matrix_local.inverted_safe() @ b.matrix_local)
+        P[b.name] = M
+        if parent is None:
+            basis = b.convert_local_to_pose(M, b.matrix_local, invert=True)
+        else:
+            basis = b.convert_local_to_pose(M, b.matrix_local, parent_matrix=P[parent.name],
+                                            parent_matrix_local=parent.matrix_local, invert=True)
+        out[b.name] = [v for row in basis for v in row]
+    return out
+
+
 def bake_pose_matrices(arm_obj, action, frames, poses_per_frame):
     """poses_per_frame[i] maps bone name -> armature-space pose Matrix for frames[i].
 

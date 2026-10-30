@@ -167,7 +167,9 @@ def fresh_session(m):
         clip.orig_start = float(t.get("start", 0.0))
         clip.loaded = True
 
-    st.baseline_json = importer.baseline_json(col)
+    baseline = importer.capture_baseline(col)
+    baseline["clusters"] = profile.get("clusters", {})
+    st.baseline_json = json.dumps(baseline)
     fps = fingerprint.model_fingerprints(col)
     st.model_fp_sync = fps["model"]
     st.skeleton_fp_sync = fps["skeleton"]

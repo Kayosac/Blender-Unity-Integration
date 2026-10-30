@@ -81,7 +81,11 @@ def load_file(scene, fi):
     if not os.path.isfile(abs_path):
         raise RuntimeError("%s is missing" % f.asset_path)
     results, prof = importer.import_takes_from(abs_path, arm, scene, scene.collection)
-    f.profile_json = json.dumps({k: prof[k] for k in ("axis_up", "axis_forward", "unit_scale_factor", "fps")})
+    file_profile = {k: prof[k] for k in ("axis_up", "axis_forward", "unit_scale_factor", "fps")}
+    static = importer.file_default_pose(abs_path, arm, scene, scene.collection)
+    if static:
+        file_profile["static_pose"] = static
+    f.profile_json = json.dumps(file_profile)
     f.sha_sync = util.sha256_file(abs_path)
     # Indices, not items: st.clips.add() re-allocates the collection and invalidates references.
     by_name = {c.name: i for i, c in enumerate(st.clips) if c.file_index == fi}

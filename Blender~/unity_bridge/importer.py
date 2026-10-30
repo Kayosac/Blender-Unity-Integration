@@ -6,7 +6,7 @@ import os
 import bpy
 from mathutils import Matrix
 
-from . import actions, baking, fbx_profile, fingerprint, util
+from . import actions, baking, fbx_nodes, fbx_profile, fingerprint, util
 
 IMPORTER_LEGACY = "LEGACY"
 IMPORTER_CPP = "CPP"
@@ -100,16 +100,11 @@ def clear_scene():
 
 
 def setup_scene(scene, profile):
+    """Scenes are always in true metres; the exporter reproduces the file's own units."""
     us = scene.unit_settings
     us.system = "METRIC"
-    u = float(profile.get("unit_scale_factor") or 100.0)
-    us.scale_length = u / 100.0
-    if abs(u - 1.0) < 1e-6:
-        us.length_unit = "CENTIMETERS"
-    elif abs(u - 0.1) < 1e-6:
-        us.length_unit = "MILLIMETERS"
-    else:
-        us.length_unit = "METERS"
+    us.scale_length = 1.0
+    us.length_unit = "METERS"
     fps = float(profile.get("fps") or 30.0)
     r = max(1, int(round(fps)))
     scene.render.fps = r
@@ -358,6 +353,38 @@ def _skeletons_match(arm_a, arm_b, tol=1e-4):
     return True
 
 
+def file_default_pose(path, target_arm, scene, temp_parent):
+    """The file's own default (static) pose, as matrix_basis per bone of target_arm.
+
+    A clip file's default pose is what Unity builds that file's avatar from, so it is written back
+    as it was rather than replaced by the model's pose.
+    """
+    tmp_col = bpy.data.collections.new("UB_TMP_POSE")
+    temp_parent.children.link(tmp_col)
+    try:
+        with active_collection(tmp_col):
+            new_obj, new_act = import_fbx(path, use_anim=False)
+        arms = [o for o in new_obj if o.type == "ARMATURE"]
+        if not arms:
+            return None
+        src = max(arms, key=lambda o: len(o.data.bones))
+        bpy.context.view_layer.update()
+        world = [{pb.name: (src.matrix_world @ pb.matrix).copy() for pb in src.pose.bones}]
+        poses = baking.world_to_target_pose(target_arm, src, world)[0]
+        out = {target_arm.name: baking.pose_basis(target_arm, poses)}
+        s_src, s_dst = baking._uniform_scale(src.matrix_world), baking._uniform_scale(target_arm.matrix_world)
+        if abs(s_src - s_dst) <= 1e-4 * max(s_src, s_dst):
+            # Same scale: the file's armature node can be reproduced too (bone curves are unaffected).
+            out["__object__"] = {target_arm.name: [v for row in src.matrix_world for v in row]}
+        remove_imported(new_obj, [], new_act)
+        return out
+    except Exception as e:  # noqa: BLE001
+        util.log("Could not read the default pose of", path, "-", e)
+        return None
+    finally:
+        bpy.data.collections.remove(tmp_col)
+
+
 def import_takes_from(path, target_arm, scene, temp_parent):
     """Imports an FBX with animation and returns its takes as actions on target_arm."""
     tmp_col = bpy.data.collections.new("UB_TMP_IMPORT")
@@ -418,6 +445,8 @@ def fresh_model(scene, model_abs_path, model_name, materials=None):
     scene.collection.children.link(col)
     with active_collection(col):
         import_fbx(model_abs_path, use_anim=False)
+    nodes = fbx_nodes.read(model_abs_path)
+    fix_bone_parented(col, nodes, profile)
     takes = []
     if profile["takes"]:
         tmp = bpy.data.collections.new("UB_TMP_TAKES")
@@ -434,7 +463,52 @@ def fresh_model(scene, model_abs_path, model_name, materials=None):
         for t in takes:
             t["start"] = starts.get(t["take"], 0.0)
     apply_preview_textures(materials)
+    profile["clusters"] = nodes["clusters"]
     return col, profile, takes
+
+
+def file_global_matrix(profile):
+    """What Blender's importer applies to the file's world space (axes and units -> metres)."""
+    from bpy_extras.io_utils import axis_conversion
+
+    u = float(profile.get("unit_scale_factor") or 1.0)
+    return (Matrix.Scale(u / 100.0, 4) @
+            axis_conversion(from_forward=profile.get("axis_forward", "-Z"),
+                            from_up=profile.get("axis_up", "Y")).to_4x4())
+
+
+def _depth(ob):
+    d = 0
+    while ob.parent is not None:
+        ob, d = ob.parent, d + 1
+    return d
+
+
+def fix_bone_parented(collection, nodes, profile):
+    """Blender's importer misplaces objects that hang under bones (weapons, sockets, Null nodes
+    turned into empties) and their children. Put each mesh or empty back where the file says it is.
+    Skinned meshes and armatures are left alone: their placement is part of the bind."""
+    if not nodes.get("nodes"):
+        return 0
+    G = file_global_matrix(profile)
+    fixed = 0
+    candidates = [o for o in collection.all_objects
+                  if o.type in {"MESH", "EMPTY"} and o.name in nodes["nodes"]
+                  and not any(m.type == "ARMATURE" for m in getattr(o, "modifiers", []))]
+    for ob in sorted(candidates, key=_depth):
+        bpy.context.view_layer.update()
+        want = G @ Matrix(nodes["nodes"][ob.name]["world"].tolist())
+        have = ob.matrix_world
+        scale = max(1e-6, baking._uniform_scale(want))
+        err = max(abs(want[i][j] - have[i][j]) / (scale if j < 3 else max(1.0, scale))
+                  for i in range(3) for j in range(4))
+        if err > 1e-4:
+            ob.matrix_world = want
+            fixed += 1
+    if fixed:
+        bpy.context.view_layer.update()
+        util.log("Placed %d object(s) where the file has them" % fixed)
+    return fixed
 
 
 def ensure_helpers_collection(scene):

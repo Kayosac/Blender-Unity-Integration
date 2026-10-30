@@ -6,7 +6,7 @@ from contextlib import contextmanager
 
 import bpy
 
-from . import actions, fbx_profile, fingerprint, history, importer, paths as bpaths, util, validate
+from . import actions, fbx_patch, fbx_profile, fingerprint, history, importer, paths as bpaths, util, validate
 
 MODEL_TYPES = {"EMPTY", "MESH", "ARMATURE", "OTHER"}
 
@@ -14,14 +14,28 @@ MODEL_TYPES = {"EMPTY", "MESH", "ARMATURE", "OTHER"}
 # --------------------------------------------------------------------------- FBX writer
 
 
-def export_fbx(filepath, profile, collection, bake_anim, object_types):
+def _scale_options(profile):
+    """Exact unit handling. Scenes are in metres (see importer.setup_scene).
+
+    UnitScaleFactor 100 (metres) and 1 (centimetres) are written exactly; anything else is written
+    with the right numbers and the factor patched in afterwards.
+    """
+    u = float(profile.get("unit_scale_factor") or 100.0)
+    if abs(u - 100.0) < 1e-9:
+        return {"apply_unit_scale": False, "apply_scale_options": "FBX_SCALE_UNITS", "global_scale": 1.0}, None
+    if abs(u - 1.0) < 1e-9:
+        return {"apply_unit_scale": False, "apply_scale_options": "FBX_SCALE_NONE", "global_scale": 1.0}, None
+    return {"apply_unit_scale": False, "apply_scale_options": "FBX_SCALE_NONE", "global_scale": 1.0 / u}, u
+
+
+def export_fbx(filepath, profile, collection, bake_anim, object_types, allowed_clusters=None):
     """One fixed preset. The profile reproduces the source file's axes and units."""
-    with importer.active_collection(collection):
+    scale_args, patch_unit = _scale_options(profile)
+    with importer.active_collection(collection), cluster_filter(allowed_clusters):
         res = importer.call_op(
             bpy.ops.export_scene.fbx,
             filepath=filepath, check_existing=False,
             use_selection=False, use_visible=False, use_active_collection=True,
-            global_scale=1.0, apply_unit_scale=True, apply_scale_options="FBX_SCALE_UNITS",
             use_space_transform=True, bake_space_transform=False,
             object_types=set(object_types),
             use_mesh_modifiers=True, use_mesh_modifiers_render=False,
@@ -34,9 +48,68 @@ def export_fbx(filepath, profile, collection, bake_anim, object_types):
             bake_anim_use_nla_strips=bake_anim, bake_anim_use_all_actions=False,
             bake_anim_force_startend_keying=True, bake_anim_step=1.0, bake_anim_simplify_factor=0.0,
             path_mode="STRIP", embed_textures=False, batch_mode="OFF",
-            axis_forward=profile.get("axis_forward", "-Z"), axis_up=profile.get("axis_up", "Y"))
+            axis_forward=profile.get("axis_forward", "-Z"), axis_up=profile.get("axis_up", "Y"),
+            **scale_args)
     if "FINISHED" not in res:
         raise RuntimeError("FBX export failed")
+    if patch_unit is not None:
+        fbx_patch.set_unit_scale(filepath, patch_unit)
+
+
+@contextmanager
+def cluster_filter(allowed):
+    """Blender's exporter writes a skin cluster for every bone. Unity turns each into an entry of
+    SkinnedMeshRenderer.bones, so a round trip would grow that list. Keep the source's clusters
+    (plus bones that now carry weights). allowed: {mesh object name: set of bone names}.
+    """
+    if not allowed:
+        yield
+        return
+    try:
+        from io_scene_fbx import export_fbx_bin as efb
+        orig = efb.fbx_skeleton_from_armature
+    except (ImportError, AttributeError):
+        util.log("Skin cluster filter unavailable in this Blender version")
+        yield
+        return
+
+    def wrapped(scene, settings, arm_obj, objects, data_meshes, data_bones, data_deformers_skin, *args, **kwargs):
+        result = orig(scene, settings, arm_obj, objects, data_meshes, data_bones, data_deformers_skin, *args, **kwargs)
+        try:
+            per_mesh = data_deformers_skin.get(arm_obj, {})
+            for me_key, (skin_key, ob_obj, clusters) in list(per_mesh.items()):
+                names = allowed.get(ob_obj.bdata.name)
+                if names is None:
+                    continue
+                keep = {bo: k for bo, k in clusters.items() if bo.bdata.name in names}
+                if keep:
+                    per_mesh[me_key] = (skin_key, ob_obj, keep)
+        except Exception as e:  # noqa: BLE001 - internal layout changed: export unfiltered
+            util.log("Skin cluster filter skipped:", e)
+        return result
+
+    efb.fbx_skeleton_from_armature = wrapped
+    try:
+        yield
+    finally:
+        efb.fbx_skeleton_from_armature = orig
+
+
+def allowed_clusters(collection, baseline):
+    """Per mesh: bones that had a cluster in the source file, plus bones that now have weights."""
+    src = baseline.get("clusters") or {}
+    out = {}
+    for ob in collection.all_objects:
+        if ob.type != "MESH" or ob.name not in src:
+            continue
+        weighted = set()
+        idx_names = {vg.index: vg.name for vg in ob.vertex_groups}
+        for v in ob.data.vertices:
+            for g in v.groups:
+                if g.weight > 0.0:
+                    weighted.add(idx_names.get(g.group))
+        out[ob.name] = set(src[ob.name]) | weighted
+    return out
 
 
 @contextmanager
@@ -69,11 +142,17 @@ def _export_pose(scene, collection, baseline):
             saved.append((keys, keys.animation_data.action, actions.slot_of(keys)))
     for id_data, _a, _s in saved:
         id_data.animation_data.action = None
+    transforms = [(o, o.matrix_basis.copy()) for o in collection.all_objects]
     pose = importer.restore_static_pose(collection, baseline)
     try:
         yield
     finally:
         importer.restore_pose_values(collection, pose)
+        for o, m in transforms:
+            try:
+                o.matrix_basis = m
+            except ReferenceError:
+                pass
         for id_data, act, slot in saved:
             try:
                 actions.assign(id_data, act, slot)
@@ -82,18 +161,51 @@ def _export_pose(scene, collection, baseline):
         scene.frame_set(frame)
 
 
+_ROT_PATH = {"QUATERNION": ("rotation_quaternion", 4), "AXIS_ANGLE": ("rotation_axis_angle", 4)}
+STATIC_FRAME = -100000  # far from every take, so no strip touches the static pose
+
+
+def _key_static(bag, base, target, group):
+    path, n = _ROT_PATH.get(target.rotation_mode, ("rotation_euler", 3))
+    for prop, size in (("location", 3), (path, n), ("scale", 3)):
+        values = getattr(target, prop)
+        for i in range(size):
+            fc = actions.new_fcurve(bag, base + prop, i, group)
+            actions.write_samples(fc, [float(STATIC_FRAME)], [float(values[i])])
+
+
+def _static_pose_action(arm):
+    """One key per channel holding the current (default) pose, for the exporter's static evaluation."""
+    act = bpy.data.actions.new("UB_STATIC_POSE")
+    slot = actions.ensure_slot(act, "OBJECT", arm.name)
+    bag = actions.ensure_channelbag(act, slot)
+    _key_static(bag, "", arm, "Object Transforms")
+    for pb in arm.pose.bones:
+        _key_static(bag, 'pose.bones["%s"].' % bpy.utils.escape_identifier(pb.name), pb, pb.name)
+    return act, slot
+
+
 @contextmanager
-def nla_takes(entries):
+def nla_takes(entries, scene=None):
     """Temporary NLA strips so every take is written under its exact name and timing.
+
+    The exporter writes node defaults from the scene as evaluated after baking, with every strip
+    active. Strips here extrapolate nothing and the scene sits on STATIC_FRAME, while a one-key
+    action holds the default pose; so the file's default pose is the source's, not a take's frame.
 
     entries: [{'id_data', 'action', 'take', 'start', 'end'}]; adds 'exported_name' to each.
     """
-    created, muted = [], []
+    created, muted, statics = [], [], []
     ours = set()
     try:
+        for id_data in {e["id_data"] for e in entries}:
+            ad = id_data.animation_data or id_data.animation_data_create()
+            act, slot = _static_pose_action(id_data)
+            statics.append(act)
+            actions.assign(id_data, act, slot)
         for e in entries:
             id_data = e["id_data"]
-            ad = id_data.animation_data or id_data.animation_data_create()
+            ad = id_data.animation_data
             for tr in ad.nla_tracks:
                 if tr.as_pointer() not in ours and not tr.mute:
                     tr.mute = True
@@ -108,9 +220,16 @@ def nla_takes(entries):
                 pass
             strip.action_frame_start = e["start"]
             strip.action_frame_end = max(e["end"], e["start"] + 1e-3)
+            try:
+                strip.frame_start_ui = e["start"]  # exact (fractional) take start
+            except (AttributeError, TypeError):
+                pass
+            strip.extrapolation = "NOTHING"
             strip.name = e["take"]
             e["exported_name"] = strip.name
             created.append((ad, track))
+        if scene is not None and entries:
+            scene.frame_set(STATIC_FRAME)
         yield entries
     finally:
         for ad, track in created:
@@ -121,6 +240,11 @@ def nla_takes(entries):
         for tr in muted:
             try:
                 tr.mute = False
+            except ReferenceError:
+                pass
+        for act in statics:
+            try:
+                bpy.data.actions.remove(act)
             except ReferenceError:
                 pass
 
@@ -270,14 +394,23 @@ def _write_file(scene, paths, fi, settings, staging_rel=None, changed_clips=()):
 
     tmp = os.path.join(paths.tmp, util.new_id() + ".fbx")
     os.makedirs(paths.tmp, exist_ok=True)
-    with export_pose(scene, col, baseline):
+    pose_source = baseline
+    if f.kind == "CLIP" and profile.get("static_pose"):
+        pose_source = dict(baseline, pose=profile["static_pose"])  # the clip file's own default pose
+    with export_pose(scene, col, pose_source):
+        if pose_source is not baseline:
+            from mathutils import Matrix
+            for name, vals in (profile["static_pose"].get("__object__") or {}).items():
+                ob = bpy.data.objects.get(name)
+                if ob is not None:
+                    ob.matrix_world = Matrix((vals[0:4], vals[4:8], vals[8:12], vals[12:16]))
         if f.kind == "MODEL":
             entries = _entries_for(arm, clips) if arm is not None else []
             key_clip = clips[0] if len(clips) == 1 and clips[0].key_action is not None else None
             if key_clip is not None:
                 actions.assign(bpy.data.objects[key_clip.key_target].data.shape_keys, key_clip.key_action)
-            with nla_takes(entries):
-                export_fbx(tmp, profile, col, bool(entries), MODEL_TYPES)
+            with nla_takes(entries, scene):
+                export_fbx(tmp, profile, col, bool(entries), MODEL_TYPES, allowed_clusters(col, baseline))
         else:
             if arm is None:
                 raise RuntimeError("The model has no armature")
@@ -292,8 +425,8 @@ def _write_file(scene, paths, fi, settings, staging_rel=None, changed_clips=()):
                     actions.assign(mesh.data.shape_keys, key_clip.key_action)
             entries = _entries_for(arm, clips)
             with temp_export_collection(scene, objects) as tmp_col:
-                with nla_takes(entries):
-                    export_fbx(tmp, profile, tmp_col, True, types)
+                with nla_takes(entries, scene):
+                    export_fbx(tmp, profile, tmp_col, True, types, allowed_clusters(col, baseline))
 
     exported = fbx_profile.read(tmp)
     starts = {t["name"]: t["start_frame"] for t in exported["takes"]}
@@ -398,7 +531,9 @@ def run(scene, mode="SMART", allow_errors=False):
         # Names follow the edit; the default pose stays the one read from the source file
         # (the current pose may be an animated frame).
         fresh = importer.capture_baseline(importer.model_collection(scene))
-        prev = json.loads(st.baseline_json or "{}").get("pose", {})
+        prev_all = json.loads(st.baseline_json or "{}")
+        fresh["clusters"] = prev_all.get("clusters", {})
+        prev = prev_all.get("pose", {})
         for arm_name, bones in fresh["pose"].items():
             old_pose = prev.get(arm_name, {})
             fresh["pose"][arm_name] = {b: old_pose.get(b, v) for b, v in bones.items()}
