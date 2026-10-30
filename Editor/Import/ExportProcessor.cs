@@ -35,6 +35,7 @@ namespace Farik.BlenderBridge
                 return;
             if (EditorApplication.timeSinceStartup < _next) return;
             _next = EditorApplication.timeSinceStartup + 1.5;
+            SelfTest.CheckRequest();
             string[] files;
             try
             {

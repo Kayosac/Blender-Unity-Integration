@@ -17,7 +17,21 @@ namespace Farik.BlenderBridge
         public static bool Running => _proc != null && !_proc.HasExited;
 
         /// <summary>Starts the bench. Selected FBX files in the Project window are added to the synthetic corpus.</summary>
-        public static void Run(int cycles = 3)
+        public static string RequestFile => BridgePaths.Bridge + "/selftest.request";
+
+        /// <summary>A request file (one asset path per line, optional) starts the bench without the menu.</summary>
+        public static void CheckRequest()
+        {
+            if (Running || !File.Exists(RequestFile)) return;
+            var lines = File.ReadAllLines(RequestFile).Select(l => l.Trim()).Where(l => l.Length > 0).ToList();
+            File.Delete(RequestFile);
+            Run(3, lines.Where(ModelInfo.IsFbx).ToList());
+        }
+
+        public static void Run(int cycles = 3) =>
+            Run(cycles, Selection.objects.Select(AssetDatabase.GetAssetPath).Where(ModelInfo.IsFbx).Distinct().ToList());
+
+        static void Run(int cycles, System.Collections.Generic.List<string> picked)
         {
             if (Running) return;
             var exe = BlenderLocator.Resolve();
@@ -27,12 +41,12 @@ namespace Farik.BlenderBridge
                 BridgeIO.Error("Self-test needs Blender and Tests~/blender/phase0.py in the package.");
                 return;
             }
+            if (File.Exists(ReportText)) File.Delete(ReportText);
             if (Directory.Exists(InputDir)) Directory.Delete(InputDir, true);
             Directory.CreateDirectory(InputDir);
-            var picked = Selection.objects.Select(AssetDatabase.GetAssetPath).Where(ModelInfo.IsFbx).Distinct().ToList();
             foreach (var p in picked) File.Copy(BridgePaths.Abs(p), Path.Combine(InputDir, Path.GetFileName(p)), true);
-            var args = $"-b --factory-startup --python \"{script}\" -- --out \"{OutDir}\" --cycles {cycles}" +
-                       (picked.Count > 0 ? $" --fbx-dir \"{InputDir}\"" : "");
+            var args = $"-b --factory-startup --python \"{script}\" -- --ub-out \"{OutDir}\" --ub-cycles {cycles}" +
+                       (picked.Count > 0 ? $" --ub-fbx-dir \"{InputDir}\"" : "");
             var psi = new ProcessStartInfo(exe, args)
             {
                 UseShellExecute = false, RedirectStandardOutput = true, RedirectStandardError = true, CreateNoWindow = true,

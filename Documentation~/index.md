@@ -81,10 +81,10 @@
 ```
 ~/Applications/Blender.app/Contents/MacOS/Blender -b --factory-startup \
   --python "<путь к пакету>/Tests~/blender/phase0.py" -- \
-  --out /tmp/ub_phase0 --fbx-dir "<папка с твоими FBX>" --cycles 5
+  --ub-out /tmp/ub_phase0 --ub-fbx-dir "<папка с твоими FBX>" --ub-cycles 5
 ```
 
-Итог — `report.txt` и `report.json` в папке `--out`. Строка `PASS` значит: первый цикл совпал с оригиналом в допусках, дальнейшие циклы ничего не сдвигают, экспорт без правок не пишет файлов.
+Итог — `report.txt` и `report.json` в папке `--ub-out`. Строка `PASS` значит: первый цикл совпал с оригиналом в допусках, дальнейшие циклы ничего не сдвигают, экспорт без правок не пишет файлов.
 
 ## Неполадки
 

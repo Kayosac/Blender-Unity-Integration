@@ -2,7 +2,7 @@
 
 Run (macOS example):
   ~/Applications/Blender.app/Contents/MacOS/Blender -b --factory-startup \
-      --python "<package>/Tests~/blender/phase0.py" -- --out /tmp/ub_phase0 [--fbx-dir <folder>] [--cycles 5]
+      --python "<package>/Tests~/blender/phase0.py" -- --ub-out /tmp/ub_phase0 [--ub-fbx-dir <folder>] [--ub-cycles 5]
 
 It builds a synthetic corpus, adds every FBX found in --fbx-dir (your own models), runs each through
 the add-on's real import and export N times inside a scratch Unity-like project, and compares the
@@ -42,9 +42,9 @@ def _arg(name, default=None):
     return default
 
 
-OUT = os.path.abspath(_arg("--out", "/tmp/ub_phase0"))
-FBX_DIR = _arg("--fbx-dir")
-CYCLES = int(_arg("--cycles", "5"))
+OUT = os.path.abspath(_arg("--ub-out", "/tmp/ub_phase0"))
+FBX_DIR = _arg("--ub-fbx-dir")
+CYCLES = int(_arg("--ub-cycles", "5"))
 PROJECT = os.path.join(OUT, "project")
 REPORT = {"blender": bpy.app.version_string, "files": {}, "checks": {}}
 
