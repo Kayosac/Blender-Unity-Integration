@@ -170,6 +170,7 @@ def fresh_session(m):
     baseline = importer.capture_baseline(col)
     baseline["clusters"] = profile.get("clusters", {})
     baseline["mirrored"] = profile.get("mirrored", [])
+    baseline["dropped"] = {t["take"]: t["dropped"] for t in takes if t.get("dropped")}
     st.baseline_json = json.dumps(baseline)
     fps = fingerprint.model_fingerprints(col)
     st.model_fp_sync = fps["model"]

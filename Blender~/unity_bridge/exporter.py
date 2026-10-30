@@ -548,6 +548,7 @@ def run(scene, mode="SMART", allow_errors=False):
         prev_all = json.loads(st.baseline_json or "{}")
         fresh["clusters"] = prev_all.get("clusters", {})
         fresh["mirrored"] = prev_all.get("mirrored", [])
+        fresh["dropped"] = prev_all.get("dropped", {})
         prev = prev_all.get("pose", {})
         for arm_name, bones in fresh["pose"].items():
             old_pose = prev.get(arm_name, {})

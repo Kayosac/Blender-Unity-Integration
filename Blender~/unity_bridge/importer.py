@@ -279,9 +279,11 @@ def transfer_takes(temp_objects, new_actions, target_collection, profile_takes):
     takes = {}
     order = [t["name"] for t in profile_takes]
     single_arm = [o for o in target_collection.all_objects if o.type == "ARMATURE"]
+    main = main_armature(target_collection)
     for act in new_actions:
         owner, take = _owner_and_take(act.name, [t["name"] for t in profile_takes])
-        entry = takes.setdefault(take, {"take": take, "action": None, "key_action": None, "key_target": ""})
+        entry = takes.setdefault(take, {"take": take, "action": None, "key_action": None, "key_target": "",
+                                        "dropped": []})
         dst = targets.get(owner)
         if dst is None and owner in key_targets:
             entry["key_action"] = act
@@ -289,17 +291,16 @@ def transfer_takes(temp_objects, new_actions, target_collection, profile_takes):
             continue
         if dst is None and len(single_arm) == 1:
             dst = single_arm[0]
-        if dst is None:
-            util.log("Take", take, "animates", owner, "which is not part of the model; skipped")
-            continue
-        if dst.type == "ARMATURE":
+        if dst is not None and dst == main and entry["action"] is None:
             entry["action"] = act
-        else:
-            util.log("Object animation on", dst.name, "is not preserved (only armatures and shape keys)")
+        elif actions.is_animated(act):
+            # Only the main skeleton and shape keys go back into the file; say what would be lost.
+            entry["dropped"].append(dst.name if dst is not None else owner)
+            util.log("Take", take, "also animates", entry["dropped"][-1], "which the export cannot write")
     result = []
     for name in order + [t for t in takes if t not in order]:
         e = takes.get(name)
-        if e and (e["action"] or e["key_action"]):
+        if e and (e["action"] or e["key_action"] or e["dropped"]):
             if e["action"] is not None:
                 e["action"].name = name
                 e["action"].use_fake_user = True
@@ -416,12 +417,16 @@ def import_takes_from(path, target_arm, scene, temp_parent):
         reuse = _skeletons_match(src, target_arm)
         results = []
         by_take = {}
+        dropped = {}
         for act in new_act:
             owner, take = _owner_and_take(act.name, [t["name"] for t in prof["takes"]])
             base, _ = util.strip_blender_suffix(owner)
             if owner and base != util.strip_blender_suffix(src.name)[0] and owner != src.name:
+                if actions.is_animated(act):
+                    dropped.setdefault(take, []).append(owner)
                 continue
             by_take[take] = act
+        prof["dropped"] = dropped
         order = [t["name"] for t in prof["takes"]] or list(by_take)
         keep = []
         for take in order:

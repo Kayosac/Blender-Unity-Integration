@@ -121,3 +121,19 @@ def write_samples(fc, frames, values):
     flat[1::2] = values
     kps.foreach_set("co", flat)
     fc.update()
+
+
+def is_animated(action, eps=1e-6):
+    """True when any curve of the action actually changes value."""
+    import numpy as np
+
+    for fc in iter_fcurves(action):
+        n = len(fc.keyframe_points)
+        if n < 2:
+            continue
+        co = np.empty(n * 2, np.float32)
+        fc.keyframe_points.foreach_get("co", co)
+        vals = co[1::2]
+        if float(vals.max() - vals.min()) > eps:
+            return True
+    return False

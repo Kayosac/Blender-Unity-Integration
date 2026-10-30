@@ -66,6 +66,18 @@ def run(scene, files_to_write=None):
                              "%d mirrored bones (negative scale, e.g. 3ds Max nubs: %s) keep their position "
                              "but are written unmirrored" % (len(mirrored), _short(mirrored, 3))))
 
+    # Takes that animate more than the exporter can write (several skeletons or animated helpers).
+    lost = dict(baseline.get("dropped") or {})
+    for f in st.files:
+        if f.kind == "CLIP" and f.loaded and f.profile_json and (files_to_write is None or f.asset_path in files_to_write):
+            for take, objs in (json.loads(f.profile_json).get("dropped") or {}).items():
+                lost.setdefault(take, []).extend(objs)
+    if lost:
+        detail = "; ".join("%s: %s" % (t, _short(set(o), 3)) for t, o in sorted(lost.items())[:3])
+        issues.append(_issue(ERROR, "TAKE_EXTRA_OBJECTS",
+                             "Takes also animate other objects that would lose their animation (%s). "
+                             "Only the main skeleton and shape keys are written" % detail))
+
     # Objects: prefabs reference child objects by name.
     old_objects = set(baseline.get("objects", {}))
     gone = old_objects - names_now

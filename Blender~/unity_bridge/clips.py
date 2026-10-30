@@ -85,6 +85,8 @@ def load_file(scene, fi):
     static = importer.file_default_pose(abs_path, arm, scene, scene.collection)
     if static:
         file_profile["static_pose"] = static
+    if prof.get("dropped"):
+        file_profile["dropped"] = prof["dropped"]
     f.profile_json = json.dumps(file_profile)
     f.sha_sync = util.sha256_file(abs_path)
     # Indices, not items: st.clips.add() re-allocates the collection and invalidates references.
