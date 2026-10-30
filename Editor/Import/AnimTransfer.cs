@@ -67,37 +67,94 @@ namespace Farik.BlenderBridge
                     if (t != rigGo.transform) bonePaths.Add(AnimationUtility.CalculateTransformPath(t, rigGo.transform));
 
             Undo.RegisterCompleteObjectUndo(dst, "Blender Bridge: update clip");
-            int removed = 0;
-            foreach (var b in AnimationUtility.GetCurveBindings(dst))
-            {
-                bool replace = human
-                    ? b.type == typeof(Animator) && IsHumanCurve(b.propertyName)
-                    : b.type == typeof(Transform) && IsBone(b.path, prefix, bonePaths);
-                if (!replace) continue;
-                AnimationUtility.SetEditorCurve(dst, b, null);
-                removed++;
-            }
+            var before = new HashSet<string>(AnimationUtility.GetCurveBindings(dst).Select(b => b.path + "|" + Group(b.propertyName)));
 
+            // What Blender sends: bone curves (Generic) or muscle curves (Humanoid). Blender bakes every
+            // bone, so a channel the clip never animated is written only if it now moves or differs from
+            // the model's default; otherwise layered clips and avatar masks would start pinning it.
             var bindings = new List<EditorCurveBinding>();
             var curves = new List<AnimationCurve>();
+            int skipped = 0;
             foreach (var b in AnimationUtility.GetCurveBindings(src))
             {
                 if (human && !(b.type == typeof(Animator) && IsHumanCurve(b.propertyName))) continue;
                 if (!human && b.type != typeof(Transform)) continue;
                 var nb = b;
                 if (!human && prefix.Length > 0) nb.path = b.path.Length == 0 ? prefix : prefix + "/" + b.path;
+                var curve = AnimationUtility.GetEditorCurve(src, b);
+                if (!before.Contains(nb.path + "|" + Group(nb.propertyName)) &&
+                    IsConstant(curve, out var value) && MatchesDefault(rigGo, b.path, b.propertyName, value, human))
+                {
+                    skipped++;
+                    continue;
+                }
                 bindings.Add(nb);
-                curves.Add(AnimationUtility.GetEditorCurve(src, b));
+                curves.Add(curve);
+            }
+            var written = new HashSet<string>(bindings.Select(b => b.path + "|" + Group(b.propertyName)));
+
+            // Replace exactly the channels written (rotation in any of Unity's encodings); keep the rest.
+            int removed = 0;
+            foreach (var b in AnimationUtility.GetCurveBindings(dst))
+            {
+                if (!written.Contains(b.path + "|" + Group(b.propertyName))) continue;
+                if (human ? b.type != typeof(Animator) : b.type != typeof(Transform)) continue;
+                AnimationUtility.SetEditorCurve(dst, b, null);
+                removed++;
             }
             AnimationUtility.SetEditorCurves(dst, bindings.ToArray(), curves.ToArray());
             AnimationUtility.SetAnimationClipSettings(dst, settings);
             AnimationUtility.SetAnimationEvents(dst, events);
             EditorUtility.SetDirty(dst);
             AssetDatabase.SaveAssetIfDirty(dst);
-            r.infos.Add($"{bindings.Count} curves written into {Path.GetFileName(animPath)} ({removed} replaced); other curves, events and settings kept");
+            r.infos.Add($"{bindings.Count} curves written into {Path.GetFileName(animPath)} ({removed} replaced, " +
+                        $"{skipped} unchanged channels left out); other curves, events and settings kept");
 
             AssetDatabase.DeleteAsset(staging);
             DeleteEmptyFolders(Path.GetDirectoryName(staging)?.Replace('\\', '/'));
+        }
+
+        static string Group(string property)
+        {
+            if (property.StartsWith("m_LocalPosition", System.StringComparison.Ordinal)) return "pos";
+            if (property.StartsWith("m_LocalRotation", System.StringComparison.Ordinal) ||
+                property.StartsWith("localEulerAngles", System.StringComparison.Ordinal)) return "rot";
+            if (property.StartsWith("m_LocalScale", System.StringComparison.Ordinal)) return "scale";
+            return property;
+        }
+
+        static bool IsConstant(AnimationCurve c, out float value)
+        {
+            value = c != null && c.length > 0 ? c.keys[0].value : 0f;
+            if (c == null) return false;
+            foreach (var k in c.keys)
+                if (Mathf.Abs(k.value - value) > 1e-5f) return false;
+            return true;
+        }
+
+        /// <summary>Does a constant channel equal the model's default local value?</summary>
+        static bool MatchesDefault(GameObject rig, string path, string property, float value, bool human)
+        {
+            if (human) return Mathf.Abs(value) < 1e-4f; // muscles rest at 0
+            if (rig == null) return false;
+            var t = path.Length == 0 ? rig.transform : rig.transform.Find(path);
+            if (t == null) return false;
+            float d;
+            switch (property)
+            {
+                case "m_LocalPosition.x": d = t.localPosition.x; break;
+                case "m_LocalPosition.y": d = t.localPosition.y; break;
+                case "m_LocalPosition.z": d = t.localPosition.z; break;
+                case "m_LocalScale.x": d = t.localScale.x; break;
+                case "m_LocalScale.y": d = t.localScale.y; break;
+                case "m_LocalScale.z": d = t.localScale.z; break;
+                case "m_LocalRotation.x": return Mathf.Abs(Mathf.Abs(value) - Mathf.Abs(t.localRotation.x)) < 1e-4f;
+                case "m_LocalRotation.y": return Mathf.Abs(Mathf.Abs(value) - Mathf.Abs(t.localRotation.y)) < 1e-4f;
+                case "m_LocalRotation.z": return Mathf.Abs(Mathf.Abs(value) - Mathf.Abs(t.localRotation.z)) < 1e-4f;
+                case "m_LocalRotation.w": return Mathf.Abs(Mathf.Abs(value) - Mathf.Abs(t.localRotation.w)) < 1e-4f;
+                default: return false;
+            }
+            return Mathf.Abs(value - d) <= 1e-4f * Mathf.Max(1f, Mathf.Abs(d));
         }
 
         static bool IsBone(string path, string prefix, HashSet<string> bonePaths)
