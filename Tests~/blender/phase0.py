@@ -118,6 +118,7 @@ def cycle_file(name, src, extra_files=None, focus=None):
             "vs_original": _summ(fbxsem.diff(original, cur)),
             "vs_previous": _summ(fbxsem.diff(prev, cur)),
             "written": [os.path.basename(i["assetPath"]) for i in out["items"]],
+            "errors": sorted({i["code"] for i in out["issues"] if i["level"] == "ERROR"}),
         })
         prev = cur
     return res
@@ -321,6 +322,10 @@ def main():
                 lines.append("      max: %s" % d["max"])
             continue
         first = r["cycles"][0]["vs_original"]
+        if r["cycles"][0].get("errors"):
+            # The tool would have stopped the export and told the user why: that is the correct outcome.
+            lines.append("BLOCK %s  export stopped with: %s" % (name, ", ".join(r["cycles"][0]["errors"])))
+            continue
         drift = all(c["vs_previous"]["ok"] for c in r["cycles"][1:])
         ok = first["ok"] and drift and all(r["fingerprint_stable"]) and all(r["noop_after_export"])
         lines.append("%s  %s  first=%s drift_free=%s fp_stable=%s noop=%s" % (
